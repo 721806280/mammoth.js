@@ -4,3 +4,6 @@
 /static/jszip
 /mammoth.browser.js
 /mammoth.browser.min.js
+/document-diff-vision/
+/.idea/
+.DS_Store

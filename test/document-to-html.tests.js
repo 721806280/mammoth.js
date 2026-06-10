@@ -500,6 +500,151 @@ test('docx tab is converted to tab in HTML', function() {
     });
 });
 
+test('compound ordered list labels are written explicitly', function() {
+    var document = new documents.Document([
+        listParagraphOfText("Parent", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Child", {numId: "42", level: "1", isOrdered: true, levelText: "%1.%2", start: "12"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<ol><li>Parent<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">1.12 </span>Child</li></ol></li></ol>'
+        );
+    });
+});
+
+test('simple ordered list labels are left to the browser', function() {
+    var document = new documents.Document([
+        listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Two", {numId: "42", level: "0", isOrdered: true, levelText: "%1"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<ol><li>One</li><li>Two</li></ol>');
+    });
+});
+
+test('ordered list labels with missing level text are left to the browser', function() {
+    var document = new documents.Document([
+        listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<ol><li>One</li></ol>');
+    });
+});
+
+test('custom simple ordered list labels are written explicitly', function() {
+    var document = new documents.Document([
+        listParagraphOfText("Parent", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Child", {numId: "42", level: "1", isOrdered: true, levelText: "(%2)"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<ol><li>Parent<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">(1) </span>Child</li></ol></li></ol>'
+        );
+    });
+});
+
+test('simple ordered list labels with custom number format are written explicitly', function() {
+    var document = new documents.Document([
+        listParagraphOfText("Item", {
+            numId: "42",
+            level: "0",
+            isOrdered: true,
+            levelText: "%1",
+            numFmt: "upperLetter"
+        })
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">A </span>Item</li></ol>'
+        );
+    });
+});
+
+test('list breaks prevent adjacent ordered lists from merging', function() {
+    var document = new documents.Document([
+        listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Two", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        new documents.Paragraph([], {listBreak: true}),
+        listParagraphOfText("Again", {numId: "43", level: "0", isOrdered: true, levelText: "%1"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<ol><li>One</li><li>Two</li></ol><ol><li>Again</li></ol>');
+    });
+});
+
+test('compound ordered list items can contain deeper lists', function() {
+    var document = new documents.Document([
+        listParagraphOfText("Parent", {numId: "42", level: "0", isOrdered: true, levelText: "%1."}),
+        listParagraphOfText("Child", {numId: "42", level: "1", isOrdered: true, levelText: "%1.%2."}),
+        listParagraphOfText("Grandchild", {numId: "42", level: "2", isOrdered: true, levelText: "%1.%2.%3."})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<ol><li>Parent<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">1.1. </span>Child<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">1.1.1. </span>Grandchild</li></ol></li></ol></li></ol>'
+        );
+    });
+});
+
+test('compound ordered list labels use the number format from each referenced level', function() {
+    var levelDefinitions = {
+        "0": {numFmt: "upperLetter"},
+        "1": {numFmt: "lowerRoman"}
+    };
+    var document = new documents.Document([
+        listParagraphOfText("Parent", {
+            numId: "42",
+            level: "0",
+            isOrdered: true,
+            levelText: "%1",
+            numFmt: "upperLetter",
+            levelDefinitions: levelDefinitions
+        }),
+        listParagraphOfText("Child", {
+            numId: "42",
+            level: "1",
+            isOrdered: true,
+            levelText: "%1.%2",
+            numFmt: "lowerRoman",
+            start: "4",
+            levelDefinitions: levelDefinitions
+        })
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">A </span>Parent<ol><li style="list-style-type: none"><span class="mammoth-list-number" data-mammoth-list-number="true">A.iv </span>Child</li></ol></li></ol>'
+        );
+    });
+});
+
 test('docx table is converted to table in HTML', function() {
     var table = new documents.Table([
         new documents.TableRow([
@@ -874,6 +1019,44 @@ function paragraphOfText(text, styleId, styleName) {
         styleId: styleId,
         styleName: styleName
     });
+}
+
+function listParagraphOfText(text, numbering) {
+    return new documents.Paragraph([runOfText(text)], {
+        numbering: numbering
+    });
+}
+
+function orderedListStyleMap() {
+    return [
+        {
+            from: documentMatchers.paragraph({list: {isOrdered: true, levelIndex: 0}}),
+            to: htmlPaths.elements([
+                htmlPaths.element("ol"),
+                htmlPaths.element("li", {}, {fresh: true})
+            ])
+        },
+        {
+            from: documentMatchers.paragraph({list: {isOrdered: true, levelIndex: 1}}),
+            to: htmlPaths.elements([
+                htmlPaths.element(["ul", "ol"]),
+                htmlPaths.element("li"),
+                htmlPaths.element("ol"),
+                htmlPaths.element("li", {}, {fresh: true})
+            ])
+        },
+        {
+            from: documentMatchers.paragraph({list: {isOrdered: true, levelIndex: 2}}),
+            to: htmlPaths.elements([
+                htmlPaths.element(["ul", "ol"]),
+                htmlPaths.element("li"),
+                htmlPaths.element(["ul", "ol"]),
+                htmlPaths.element("li"),
+                htmlPaths.element("ol"),
+                htmlPaths.element("li", {}, {fresh: true})
+            ])
+        }
+    ];
 }
 
 function runOfText(text, properties) {

@@ -249,6 +249,31 @@ test("numbering properties are ignored if w:numId is missing", function() {
     assert.equal(numberingLevel, null);
 });
 
+test("numbering is disabled if w:numId is zero", function() {
+    var numberingPropertiesXml = new XmlElement("w:numPr", {}, [
+        new XmlElement("w:ilvl", {"w:val": "1"}),
+        new XmlElement("w:numId", {"w:val": "0"})
+    ]);
+
+    var numbering = new NumberingMap({
+        findLevel: {"0": {"1": {isOrdered: true, level: "1"}}}
+    });
+
+    var numberingLevel = _readNumberingProperties(null, numberingPropertiesXml, numbering);
+    assert.equal(numberingLevel, null);
+});
+
+test("paragraph has list break if w:numId is zero", function() {
+    var numberingPropertiesXml = new XmlElement("w:numPr", {}, [
+        new XmlElement("w:numId", {"w:val": "0"})
+    ]);
+    var propertiesXml = new XmlElement("w:pPr", {}, [numberingPropertiesXml]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+    assert.equal(paragraph.listBreak, true);
+});
+
 test("content of deleted paragraph is prepended to next paragraph", function() {
     var styles = new Styles(
         {
