@@ -529,6 +529,22 @@ test('simple ordered list labels are left to the browser', function() {
     });
 });
 
+test('simple ordered lists split by a paragraph keep their numbering', function() {
+    var document = new documents.Document([
+        listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Two", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        paragraphOfText("Between"),
+        listParagraphOfText("Three", {numId: "42", level: "0", isOrdered: true, levelText: "%1"}),
+        listParagraphOfText("Four", {numId: "42", level: "0", isOrdered: true, levelText: "%1"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<ol><li>One</li><li>Two</li></ol><p>Between</p><ol start="3"><li>Three</li><li>Four</li></ol>');
+    });
+});
+
 test('ordered list labels with missing level text are left to the browser', function() {
     var document = new documents.Document([
         listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true})
