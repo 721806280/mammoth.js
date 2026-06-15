@@ -32,6 +32,7 @@ interface Options {
     includeDefaultStyleMap?: boolean;
     convertImage?: ImageConverter;
     ignoreEmptyParagraphs?: boolean;
+    includeHeadersAndFooters?: boolean;
     idPrefix?: string;
     externalFileAccess?: boolean;
     transformDocument?: (element: any) => any;

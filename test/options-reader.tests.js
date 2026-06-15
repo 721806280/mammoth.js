@@ -54,6 +54,12 @@ test('blank lines in custom style map are ignored', function() {
     assert.deepEqual(optionsReader._defaultStyleMap, options.readStyleMap());
 });
 
+test('default style map includes header and footer paragraph styles', function() {
+    var defaultStyleMap = optionsReader._defaultStyleMap;
+    assert.notEqual(defaultStyleMap.indexOf("p[style-name='Header'] => p:fresh"), -1);
+    assert.notEqual(defaultStyleMap.indexOf("p[style-name='Footer'] => p:fresh"), -1);
+});
+
 test('default style mappings are ignored if includeDefaultStyleMap is false', function() {
     var options = readOptions({
         styleMap: "p.SectionTitle => h2",

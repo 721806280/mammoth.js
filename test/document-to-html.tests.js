@@ -1029,6 +1029,23 @@ test('long documents do not cause stack overflow', function() {
     });
 });
 
+test('docx headers and footers are converted to HTML landmarks', function() {
+    var headers = [new documents.Header(
+        [paragraphOfText("This is a header")]
+    )];
+    var footers = [new documents.Footer(
+        [paragraphOfText("This is a footer")]
+    )];
+    var document = new documents.Document([], {
+        headers: headers,
+        footers: footers
+    });
+    var converter = new DocumentConverter({includeHeadersAndFooters: true});
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<header><p>This is a header</p></header><footer><p>This is a footer</p></footer>');
+    });
+});
+
 function paragraphOfText(text, styleId, styleName) {
     var run = runOfText(text);
     return new documents.Paragraph([run], {
