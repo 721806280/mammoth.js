@@ -545,6 +545,21 @@ test('simple ordered lists split by a paragraph keep their numbering', function(
     });
 });
 
+test('ordered lists split across separate list definitions use explicit start', function() {
+    var document = new documents.Document([
+        listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true, levelText: "%1", start: "1"}),
+        paragraphOfText("Between"),
+        listParagraphOfText("Two", {numId: "43", level: "0", isOrdered: true, levelText: "%1", start: "2"}),
+        listParagraphOfText("Three", {numId: "43", level: "0", isOrdered: true, levelText: "%1", start: "2"})
+    ]);
+    var converter = new DocumentConverter({
+        styleMap: orderedListStyleMap()
+    });
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<ol><li>One</li></ol><p>Between</p><ol start="2"><li>Two</li><li>Three</li></ol>');
+    });
+});
+
 test('ordered list labels with missing level text are left to the browser', function() {
     var document = new documents.Document([
         listParagraphOfText("One", {numId: "42", level: "0", isOrdered: true})
