@@ -1,6 +1,6 @@
 {
   "name": "@xm721806280/mammoth",
-  "version": "1.12.1-rc1",
+  "version": "1.12.1-rc2",
   "author": "Michael Williamson <mike@zwobble.org>",
   "description": "Convert Word documents from docx to simple HTML and Markdown",
   "keywords": [
