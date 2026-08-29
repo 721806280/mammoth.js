@@ -1,3 +1,9 @@
+# 1.12.2
+
+* Avoid prototype pollution when reading the styles defined in a document. This
+  avoids an issue where a maliciously crafted document could be used to set
+  externalFileAccess to true.
+
 # 1.12.1
 
 * Fix: on Windows, when an image's content type includes a backslash in the
