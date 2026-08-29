@@ -610,6 +610,107 @@ test("complex fields", (function() {
     };
 })());
 
+test("simple fields", {
+    "simple field with unknown instruction reads its result content": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": " TITLE  \\* MERGEFORMAT "}, [
+                runOfText("Using the Title Property in the Document")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isText("Using the Title Property in the Document")
+                )
+            })
+        ));
+    },
+
+    "simple field does not warn about an unrecognised element": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": " TITLE "}, [
+                runOfText("Title")
+            ])
+        ]);
+        var result = readXmlElement(paragraphXml);
+        assert.deepEqual(result.messages, []);
+    },
+
+    "simple field for hyperlink with quoted location is read as external hyperlink": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK "http://example.com" '}, [
+                runOfText("this is a hyperlink")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        href: "http://example.com",
+                        children: contains(
+                            isText("this is a hyperlink")
+                        )
+                    })
+                )
+            })
+        ));
+    },
+
+    "simple field for hyperlink with l switch is read as internal hyperlink": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK \\l "InternalLink" '}, [
+                runOfText("this is a hyperlink")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        anchor: "InternalLink",
+                        children: contains(
+                            isText("this is a hyperlink")
+                        )
+                    })
+                )
+            })
+        ));
+    },
+
+    "simple field is no longer a hyperlink after it ends": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK "http://example.com" '}, [
+                runOfText("linked")
+            ]),
+            runOfText("not linked")
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        href: "http://example.com",
+                        children: contains(
+                            isText("linked")
+                        )
+                    })
+                )
+            }),
+            isRun({
+                children: contains(
+                    isText("not linked")
+                )
+            })
+        ));
+    }
+});
+
 test("checkboxes", {
     "complex field checkbox without separate is read": function() {
         var paragraphXml = xml.element("w:p", {}, [
