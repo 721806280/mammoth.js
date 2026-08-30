@@ -67,9 +67,11 @@
     "Buffer": false,
     "console": true,
     "exports": true,
+    "global": false,
     "module": true,
     "require": false,
     "TextDecoder": false,
+    "TextEncoder": false,
     "Uint8Array": false
   }
 }

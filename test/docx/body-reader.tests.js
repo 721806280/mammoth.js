@@ -1670,6 +1670,38 @@ function isImage(options) {
     }
 }
 
+
+function oleObjectRelationship(relationshipId, target) {
+    return {
+        relationshipId: relationshipId,
+        target: target,
+        type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
+    };
+}
+
+var OLE_BUFFER = new Buffer("Pretend OLE compound file");
+var SIZE_IMAGE_BUFFER = new Buffer("Pretend image bytes");
+
+function readEmbeddedOleObject(element, options) {
+    options = options || {};
+
+    var relationships = [
+        oleObjectRelationship("rId5", "embeddings/oleObject1.bin")
+    ].concat(options.relationships || []);
+
+    return readXmlElement(element, {
+        relationships: new Relationships(relationships),
+        contentTypes: {
+            findContentType: function() {
+                return "application/vnd.openxmlformats-officedocument.oleObject";
+            }
+        },
+        docxFile: createFakeDocxFile({
+            "word/embeddings/oleObject1.bin": OLE_BUFFER
+        })
+    });
+}
+
 function readEmbeddedImage(element, options) {
     options = options || {};
 
@@ -1709,6 +1741,101 @@ test("when v:imagedata element has no relationship ID then it is ignored with wa
     assert.deepEqual(result.value, []);
     assert.deepEqual(result.messages, [warning("A v:imagedata element without a relationship ID was ignored")]);
 });
+test("OLE object is read with progId and display name", function() {
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Excel.Sheet.12"
+    });
+
+    var result = readEmbeddedOleObject(oleElement);
+
+    return promiseThat(result, isSuccess(hasProperties({
+        type: "oleObject",
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet"
+    })));
+});
+
+test("OLE object uses ProgID as display name when ProgID is not recognised", function() {
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Unknown.ProgID.1"
+    });
+
+    var result = readEmbeddedOleObject(oleElement);
+
+    return promiseThat(result, isSuccess(hasProperties({
+        progId: "Unknown.ProgID.1",
+        displayName: "Unknown.ProgID.1"
+    })));
+});
+
+test("when OLE object has no relationship ID then it is ignored with warning", function() {
+    var oleElement = new XmlElement("o:OLEObject", {ProgID: "Excel.Sheet.12"});
+
+    var result = readXmlElement(oleElement);
+
+    assert.deepEqual(result.value, []);
+    assert.deepEqual(result.messages, [warning("An OLE object without a relationship ID was ignored")]);
+});
+
+test("w:object with an OLE object drops the EMF preview image", function() {
+    var relationships = [
+        imageRelationship("rId6", "media/icon1.emf"),
+        oleObjectRelationship("rId5", "embeddings/oleObject1.bin")
+    ];
+    var shapeElement = new XmlElement("v:shape", {}, [
+        new XmlElement("v:imagedata", {"r:id": "rId6"})
+    ]);
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Excel.Sheet.12"
+    });
+    var objectElement = new XmlElement("w:object", {}, [shapeElement, oleElement]);
+
+    var result = readXmlElement(objectElement, {
+        relationships: new Relationships(relationships),
+        contentTypes: fakeContentTypes,
+        docxFile: createFakeDocxFile({
+            "word/media/icon1.emf": OLE_BUFFER,
+            "word/embeddings/oleObject1.bin": OLE_BUFFER
+        })
+    });
+
+    assertThat(result.value, hasProperties({type: "oleObject", progId: "Excel.Sheet.12"}));
+    assert.deepEqual(result.messages, []);
+});
+
+test("w:object with an OLE object without a relationship ID is ignored with warning", function() {
+    var oleElement = new XmlElement("o:OLEObject", {ProgID: "Excel.Sheet.12"});
+    var objectElement = new XmlElement("w:object", {}, [oleElement]);
+
+    var result = readXmlElement(objectElement);
+
+    assert.deepEqual(result.value, []);
+    assert.deepEqual(result.messages, [warning("An OLE object without a relationship ID was ignored")]);
+});
+
+test("w:object without an OLE object keeps its image children", function() {
+    var relationships = [
+        imageRelationship("rId6", "media/icon1.emf")
+    ];
+    var shapeElement = new XmlElement("v:shape", {}, [
+        new XmlElement("v:imagedata", {"r:id": "rId6"})
+    ]);
+    var objectElement = new XmlElement("w:object", {}, [shapeElement]);
+
+    var result = readXmlElement(objectElement, {
+        relationships: new Relationships(relationships),
+        contentTypes: fakeContentTypes,
+        docxFile: createFakeDocxFile({
+            "word/media/icon1.emf": SIZE_IMAGE_BUFFER
+        })
+    });
+
+    assertThat(result.value, contains(hasProperties({type: "image"})));
+});
+
 
 test("can read inline pictures", function() {
     var drawing = createInlineImage({

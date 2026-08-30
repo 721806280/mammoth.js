@@ -1,4 +1,5 @@
 var assert = require("assert");
+var zlib = require("zlib");
 var promises = require("../lib/promises");
 
 var documents = require("../lib/documents");
@@ -991,6 +992,322 @@ test('comment references are linked to comment after main body', function() {
     });
 });
 
+test('OLE objects are written as a span with icon and display name', function() {
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet",
+        altText: "Excel Worksheet"
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('>Excel Worksheet</text>'), -1);
+        assert.equal(result.value.indexOf(' /> Excel Worksheet</span>'), -1);
+    });
+});
+
+
+test('OLE object display name is extracted from the EMF icon text', function() {
+    var text = "Workbook Template.xlsx";
+    var textBytes = new Buffer(text, "utf-16le");
+    var nChars = text.length;
+    var offString = 8 + 16 + 4 + 4 + 4 + 8 + 4 + 4 + 4 + 16 + 4; // = 75
+    // pad offString to 4-byte alignment
+    while (offString % 4 !== 0) {
+        offString += 1;
+    }
+    var recordSize = offString + nChars * 2;
+    while (recordSize % 4 !== 0) {
+        recordSize += 1;
+    }
+    var record = new Buffer(recordSize);
+    record.fill(0);
+    record.writeUInt32LE(84, 0);          // iType = EMR_EXTTEXTOUTW
+    record.writeUInt32LE(recordSize, 4); // nSize
+    record.writeUInt32LE(nChars, 8 + 16 + 4 + 4 + 4 + 8);  // nChars
+    record.writeUInt32LE(offString, 8 + 16 + 4 + 4 + 4 + 8 + 4); // offString
+    textBytes.copy(record, offString);
+    var iconReader = function() {
+        return promises.when(record);
+    };
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet",
+        iconReader: iconReader
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('>Workbook Template.xlsx</text>'), -1);
+        assert.equal(result.value.indexOf(' /> Workbook Template.xlsx</span>'), -1);
+    });
+});
+
+
+test('OLE object display name is decoded from GB18030 EMF icon text', function() {
+    // "台账模板.xlsx" in GB18030. The byte sequence is not valid UTF-8, so the
+    // decoder has to fall through to GB18030 rather than to the byte-per-char
+    // reading, which would produce mojibake and be discarded.
+    var textBytes = new Buffer([0xCC, 0xA8, 0xD5, 0xCB, 0xC4, 0xA3, 0xB0, 0xE5, 0x2E, 0x78, 0x6C, 0x73, 0x78]);
+    var offString = 76; // 8 + 16 + 4 + 4 + 4 + 8 + 4 + 4 + 4 + 16 + 4, padded to 4 bytes
+    var recordSize = offString + textBytes.length;
+    while (recordSize % 4 !== 0) {
+        recordSize += 1;
+    }
+    var record = new Buffer(recordSize);
+    record.fill(0);
+    record.writeUInt32LE(83, 0); // iType = EMR_EXTTEXTOUTA
+    record.writeUInt32LE(recordSize, 4); // nSize
+    record.writeUInt32LE(textBytes.length, 8 + 16 + 4 + 4 + 4 + 8); // nChars
+    record.writeUInt32LE(offString, 8 + 16 + 4 + 4 + 4 + 8 + 4); // offString
+    textBytes.copy(record, offString);
+
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet",
+        iconReader: function() {
+            return promises.when(record);
+        }
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('>台账模板.xlsx</text>'), -1);
+    });
+});
+
+
+test('OLE object icon is extracted from the EMF bitmap', function() {
+    // Build a minimal EMF containing a 2x2 24bpp DIB.
+    var width = 2;
+    var height = 2;
+    var bpp = 24;
+    var rowSize = Math.floor(((bpp * width) + 31) / 32) * 4; // 8
+    var pixelSize = rowSize * height; // 16
+    var bmiSize = 40; // BITMAPINFOHEADER, no palette
+    var bmi = new Buffer(bmiSize + pixelSize);
+    bmi.fill(0);
+    bmi.writeUInt32LE(40, 0);               // biSize
+    bmi.writeInt32LE(width, 4);             // biWidth
+    bmi.writeInt32LE(height, 8);            // biHeight
+    bmi.writeUInt16LE(1, 12);               // biPlanes
+    bmi.writeUInt16LE(bpp, 14);             // biBitCount
+    // pixel rows: BGR triples padded to rowSize
+    var pixels = bmi.slice(bmiSize, bmiSize + pixelSize);
+    pixels.fill(0);
+    pixels[0] = 0x00; pixels[1] = 0x7F; pixels[2] = 0xC0; // a pixel
+    var iconReader = function() {
+        return promises.when(bmi);
+    };
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "台账模板.xlsx",
+        iconReader: iconReader
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('<image '), -1);
+        assert.notEqual(svg.indexOf('data:image/png;base64,'), -1);
+        assert.notEqual(svg.indexOf('>台账模板.xlsx</text>'), -1);
+        assert.equal(svg.indexOf('<rect x="1"'), -1);
+    });
+});
+
+test('OLE object PNG previews preserve transparent DIB pixels', function() {
+    var dib = new Buffer(40 + 16);
+    dib.fill(0);
+    dib.writeUInt32LE(40, 0);
+    dib.writeInt32LE(2, 4);
+    dib.writeInt32LE(2, 8);
+    dib.writeUInt16LE(1, 12);
+    dib.writeUInt16LE(32, 14);
+    dib[40] = 0xFF;
+    dib[41] = 0x00;
+    dib[42] = 0x00;
+    dib[43] = 0x00; // transparent pixel
+    dib[44] = 0x00;
+    dib[45] = 0x00;
+    dib[46] = 0xFF;
+    dib[47] = 0xFF; // opaque pixel
+
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "Transparent.xlsx",
+        iconReader: function() {
+            return promises.when(dib);
+        }
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var png = embeddedObjectPng(result.value);
+        assert.equal(png.slice(0, 8).toString("hex"), "89504e470d0a1a0a");
+        assert.equal(png[25], 6); // RGBA colour type
+        var decoded = decodePngPixels(png);
+        var alphas = [];
+        for (var y = 0; y < decoded.height; y++) {
+            for (var x = 0; x < decoded.width; x++) {
+                alphas.push(decoded.data[y * (decoded.width * 4 + 1) + 1 + x * 4 + 3]);
+            }
+        }
+        assert.notEqual(alphas.indexOf(0), -1);
+        assert.notEqual(alphas.indexOf(255), -1);
+    });
+});
+
+test('OLE object PNG previews clear black background from a non-square bitmap', function() {
+    // 8x3 32bpp DIB. The top row is black, the middle row is black only at
+    // x = 4, and the bottom row is white, so the middle black pixel can only be
+    // reached by stepping down a full row from the seeded top row. Width and
+    // height differ enough that stepping by the wrong one lands on a white
+    // pixel and leaves the middle pixel opaque.
+    var width = 8;
+    var height = 3;
+    var rowSize = width * 4;
+    var dib = new Buffer(40 + rowSize * height);
+    dib.fill(0);
+    dib.writeUInt32LE(40, 0);
+    dib.writeInt32LE(width, 4);
+    dib.writeInt32LE(height, 8);
+    dib.writeUInt16LE(1, 12);
+    dib.writeUInt16LE(32, 14);
+
+    function writePixel(x, y, isBlack) {
+        // DIB rows with a positive height are stored bottom-up.
+        var offset = 40 + (height - y - 1) * rowSize + x * 4;
+        var value = isBlack ? 0x00 : 0xFF;
+        dib[offset] = value;
+        dib[offset + 1] = value;
+        dib[offset + 2] = value;
+        dib[offset + 3] = 0xFF;
+    }
+
+    for (var x = 0; x < width; x++) {
+        writePixel(x, 0, true);
+        writePixel(x, 1, x === 4);
+        writePixel(x, 2, false);
+    }
+
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "NonSquare.xlsx",
+        iconReader: function() {
+            return promises.when(dib);
+        }
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var decoded = decodePngPixels(embeddedObjectPng(result.value));
+        assert.equal(decoded.width, width);
+        assert.equal(decoded.height, height);
+        function alphaAt(x, y) {
+            return decoded.data[y * (width * 4 + 1) + 1 + x * 4 + 3];
+        }
+        assert.equal(alphaAt(4, 0), 0); // seeded black pixel in the top row
+        assert.equal(alphaAt(4, 1), 0); // only reachable one row down from (4, 0)
+        assert.equal(alphaAt(0, 2), 255); // white pixel is left alone
+    });
+});
+
+test('OLE object icon records preserve EMF destination coordinates', function() {
+    var emf = new Buffer(128 + 108 + 40 + 16);
+    emf.fill(0);
+    emf.writeUInt32LE(1, 0); // EMF header
+    emf.writeUInt32LE(128, 4);
+    emf.writeInt32LE(0, 8);
+    emf.writeInt32LE(0, 12);
+    emf.writeInt32LE(32, 16);
+    emf.writeInt32LE(32, 20);
+
+    var recordOffset = 128;
+    emf.writeUInt32LE(114, recordOffset); // EMR_ALPHABLEND
+    emf.writeUInt32LE(108 + 40 + 16, recordOffset + 4);
+    emf.writeInt32LE(12, recordOffset + 24); // xDest
+    emf.writeInt32LE(3, recordOffset + 28); // yDest
+    emf.writeInt32LE(2, recordOffset + 32); // cxDest
+    emf.writeInt32LE(2, recordOffset + 36); // cyDest
+    emf.writeUInt32LE(108, recordOffset + 84); // offBmiSrc
+    emf.writeUInt32LE(40, recordOffset + 88); // cbBmiSrc
+    emf.writeUInt32LE(148, recordOffset + 92); // offBitsSrc
+    emf.writeUInt32LE(16, recordOffset + 96); // cbBitsSrc
+
+    var dibOffset = recordOffset + 108;
+    emf.writeUInt32LE(40, dibOffset);
+    emf.writeInt32LE(2, dibOffset + 4);
+    emf.writeInt32LE(2, dibOffset + 8);
+    emf.writeUInt16LE(1, dibOffset + 12);
+    emf.writeUInt16LE(24, dibOffset + 14);
+
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "台账模板.xlsx",
+        iconReader: function() {
+            return promises.when(emf);
+        }
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('<image x="12" y="3" width="2" height="2"'), -1);
+        assert.notEqual(svg.indexOf('xlink:href="data:image/png;base64,'), -1);
+    });
+});
+
+test('OLE object STRETCHDIBITS records use their DIB offsets', function() {
+    var emf = new Buffer(128 + 80 + 40 + 16);
+    emf.fill(0);
+    emf.writeUInt32LE(1, 0); // EMF header
+    emf.writeUInt32LE(128, 4);
+    emf.writeInt32LE(0, 8);
+    emf.writeInt32LE(0, 12);
+    emf.writeInt32LE(32, 16);
+    emf.writeInt32LE(32, 20);
+
+    var recordOffset = 128;
+    emf.writeUInt32LE(81, recordOffset); // EMR_STRETCHDIBITS
+    emf.writeUInt32LE(80 + 40 + 16, recordOffset + 4);
+    emf.writeInt32LE(8, recordOffset + 24); // xDest
+    emf.writeInt32LE(5, recordOffset + 28); // yDest
+    emf.writeInt32LE(3, recordOffset + 72); // cxDest
+    emf.writeInt32LE(4, recordOffset + 76); // cyDest
+    emf.writeUInt32LE(80, recordOffset + 48); // offBmiSrc
+    emf.writeUInt32LE(40, recordOffset + 52); // cbBmiSrc
+    emf.writeUInt32LE(120, recordOffset + 56); // offBitsSrc
+    emf.writeUInt32LE(16, recordOffset + 60); // cbBitsSrc
+
+    var dibOffset = recordOffset + 80;
+    emf.writeUInt32LE(40, dibOffset);
+    emf.writeInt32LE(2, dibOffset + 4);
+    emf.writeInt32LE(2, dibOffset + 8);
+    emf.writeUInt16LE(1, dibOffset + 12);
+    emf.writeUInt16LE(24, dibOffset + 14);
+
+    var oleObject = new documents.OleObject({
+        progId: "Word.Document.12",
+        displayName: "Preview.docx",
+        iconReader: function() {
+            return promises.when(emf);
+        }
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('<image x="8" y="5" width="3" height="4"'), -1);
+    });
+});
+
+test('OLE objects without an icon use a labelled fallback icon', function() {
+    var oleObject = new documents.OleObject({
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet"
+    });
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(oleObject).then(function(result) {
+        var svg = embeddedObjectSvg(result.value);
+        assert.notEqual(svg.indexOf('>Excel Worksheet</text>'), -1);
+    });
+});
+
 test('images are written with data URIs', function() {
     var imageBuffer = new Buffer("Not an image at all!");
     var image = new documents.Image({
@@ -1094,6 +1411,35 @@ test('docx headers and footers are converted to HTML landmarks', function() {
         assert.equal(result.value, '<header><p>This is a header</p></header><footer><p>This is a footer</p></footer>');
     });
 });
+
+function embeddedObjectSvg(html) {
+    var match = html.match(/<img src="data:image\/svg\+xml;base64,([^"]+)"/);
+    return Buffer.from(match[1], "base64").toString("utf8");
+}
+
+function embeddedObjectPng(html) {
+    var svg = embeddedObjectSvg(html);
+    var match = svg.match(/xlink:href="data:image\/png;base64,([^"]+)"/);
+    return Buffer.from(match[1], "base64");
+}
+
+function decodePngPixels(png) {
+    var offset = 8;
+    var idat = [];
+    while (offset < png.length) {
+        var length = png.readUInt32BE(offset);
+        var type = png.toString("ascii", offset + 4, offset + 8);
+        if (type === "IDAT") {
+            idat.push(png.slice(offset + 8, offset + 8 + length));
+        }
+        offset += length + 12;
+    }
+    return {
+        width: png.readUInt32BE(16),
+        height: png.readUInt32BE(20),
+        data: zlib.inflateSync(Buffer.concat(idat))
+    };
+}
 
 function paragraphOfText(text, styleId, styleName) {
     var run = runOfText(text);
