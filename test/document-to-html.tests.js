@@ -41,6 +41,40 @@ test('ignores empty paragraphs', function() {
     });
 });
 
+test('paragraph bottom borders are written as HTML borders', function() {
+    var document = new documents.Document([
+        new documents.Paragraph([runOfText("Testing")], {
+            borders: {
+                bottom: {
+                    style: "single",
+                    size: "6",
+                    space: "1",
+                    color: "auto"
+                }
+            }
+        })
+    ]);
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(
+            result.value,
+            '<p style="border-bottom: 1px solid currentColor; padding-bottom: 1pt">Testing</p>'
+        );
+    });
+});
+
+test('bordered empty paragraphs are preserved', function() {
+    var document = new documents.Document([
+        new documents.Paragraph([], {
+            borders: {bottom: {style: "single"}}
+        })
+    ]);
+    var converter = new DocumentConverter();
+    return converter.convertToHtml(document).then(function(result) {
+        assert.equal(result.value, '<p style="border-bottom: 1px solid currentColor"></p>');
+    });
+});
+
 test('text is HTML-escaped', function() {
     var document = new documents.Document([
         paragraphOfText("1 < 2")

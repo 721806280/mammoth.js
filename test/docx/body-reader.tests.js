@@ -104,6 +104,41 @@ test("paragraph has justification read from paragraph properties if present", fu
     assert.deepEqual(paragraph.alignment, "center");
 });
 
+test("paragraph borders are read from paragraph properties", function() {
+    var borderXml = new XmlElement("w:bottom", {
+        "w:val": "single",
+        "w:sz": "6",
+        "w:space": "1",
+        "w:color": "auto"
+    }, []);
+    var propertiesXml = new XmlElement("w:pPr", {}, [
+        new XmlElement("w:pBdr", {}, [borderXml])
+    ]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+
+    assert.deepEqual(paragraph.borders.bottom, {
+        style: "single",
+        size: "6",
+        space: "1",
+        color: "auto"
+    });
+    assert.equal(paragraph.borders.top, null);
+});
+
+test("paragraph borders with nil values are ignored", function() {
+    var borderXml = new XmlElement("w:bottom", {"w:val": "nil"}, []);
+    var propertiesXml = new XmlElement("w:pPr", {}, [
+        new XmlElement("w:pBdr", {}, [borderXml])
+    ]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+
+    assert.equal(paragraph.borders.bottom, null);
+});
+
 test("paragraph indent", {
     "when w:start is set then start indent is read from w:start": function() {
         var paragraphXml = paragraphWithIndent({"w:start": "720", "w:left": "40"});
