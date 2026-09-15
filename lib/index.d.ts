@@ -32,6 +32,8 @@ interface Options {
     includeDefaultStyleMap?: boolean;
     convertImage?: ImageConverter;
     ignoreEmptyParagraphs?: boolean;
+    includeHeadersAndFooters?: boolean;
+    preserveAlignment?: boolean;
     idPrefix?: string;
     externalFileAccess?: boolean;
     transformDocument?: (element: any) => any;
@@ -45,11 +47,13 @@ interface Image {
     contentType: string;
     readAsArrayBuffer: () => Promise<ArrayBuffer>;
     readAsBase64String: () => Promise<string>;
+    /** Node only: rejects in the browser, where `Buffer` does not exist. */
     readAsBuffer: () => Promise<Buffer>;
     read: ImageRead;
 }
 
 interface ImageRead {
+    /** Node only: rejects in the browser, where `Buffer` does not exist. */
     (): Promise<Buffer>;
     (encoding: string): Promise<string>;
 }

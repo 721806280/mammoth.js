@@ -1,6 +1,8 @@
 _build
 .git
 .gitignore
+.idea
+.claude
 browser-demo
 node_modules
 makefile

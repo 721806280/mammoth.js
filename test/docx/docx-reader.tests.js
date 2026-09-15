@@ -44,6 +44,11 @@ var relationshipNamespaces = {
     "r": "http://schemas.openxmlformats.org/package/2006/relationships"
 };
 
+var documentNamespaces = {
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+};
+
 test("main document is found using _rels/.rels", function() {
     var relationships = xml.element("r:Relationships", {}, [
         xml.element("r:Relationship", {
@@ -168,6 +173,117 @@ test("part paths", {
     });
 });
 
+test("referenced header and footer parts are found using main document relationships", function() {
+    var docxFile = createFakeDocxFile({
+        "_rels/.rels": createPackageRelationships("word/document.xml"),
+        "word/document.xml": createDocumentWithHeaderFooterReferences([
+            {name: "header", relationshipId: "rIdHeader1"},
+            {name: "header", relationshipId: "rIdHeader2"},
+            {name: "footer", relationshipId: "rIdFooter"}
+        ]),
+        "word/_rels/document.xml.rels": xml.writeString(xml.element("r:Relationships", {}, [
+            xml.element("r:Relationship", {
+                "Id": "rIdHeader1",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                "Target": "header1.xml"
+            }),
+            xml.element("r:Relationship", {
+                "Id": "rIdHeader2",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                "Target": "header2.xml"
+            }),
+            xml.element("r:Relationship", {
+                "Id": "rIdFooter",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer",
+                "Target": "footer1.xml"
+            }),
+            xml.element("r:Relationship", {
+                "Id": "rIdUnusedHeader",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                "Target": "header3.xml"
+            })
+        ]), relationshipNamespaces),
+        "word/header1.xml": " ",
+        "word/header2.xml": " ",
+        "word/header3.xml": " ",
+        "word/footer1.xml": " "
+    });
+    return docxReader._findPartPaths(docxFile, {includeHeadersAndFooters: true}).then(function(partPaths) {
+        assert.deepEqual(partPaths.headers, [
+            "word/header1.xml",
+            "word/header2.xml"
+        ]);
+        assert.deepEqual(partPaths.footers, ["word/footer1.xml"]);
+    });
+});
+
+test("headers and footers are not read unless explicitly included", function() {
+    var docxFile = createFakeDocxFile({
+        "_rels/.rels": createPackageRelationships("word/document.xml"),
+        "word/document.xml": createDocumentWithHeaderFooterReferences([
+            {name: "header", relationshipId: "rIdHeader"}
+        ]),
+        "word/_rels/document.xml.rels": xml.writeString(xml.element("r:Relationships", {}, [
+            xml.element("r:Relationship", {
+                "Id": "rIdHeader",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                "Target": "header1.xml"
+            })
+        ]), relationshipNamespaces),
+        "word/header1.xml": xml.writeString(xml.element("w:hdr", {}, [
+            xml.element("w:unsupportedHeaderElement", {}, [])
+        ]), documentNamespaces)
+    });
+    return docxReader.read(docxFile).then(function(result) {
+        assert.deepEqual(result.messages, []);
+    });
+});
+
+test("headers and footers are read when explicitly included", function() {
+    var docxFile = createFakeDocxFile({
+        "_rels/.rels": createPackageRelationships("word/document.xml"),
+        "word/document.xml": createDocumentWithHeaderFooterReferences([
+            {name: "header", relationshipId: "rIdHeader"},
+            {name: "footer", relationshipId: "rIdFooter"}
+        ]),
+        "word/_rels/document.xml.rels": xml.writeString(xml.element("r:Relationships", {}, [
+            xml.element("r:Relationship", {
+                "Id": "rIdHeader",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header",
+                "Target": "header1.xml"
+            }),
+            xml.element("r:Relationship", {
+                "Id": "rIdFooter",
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer",
+                "Target": "footer1.xml"
+            })
+        ]), relationshipNamespaces),
+        "word/header1.xml": createHeaderFooterXml("hdr", "Header text"),
+        "word/footer1.xml": createHeaderFooterXml("ftr", "Footer text")
+    });
+    return docxReader.read(docxFile, {}, {includeHeadersAndFooters: true}).then(function(result) {
+        assert.deepEqual(result.value.headers, [
+            documents.Header([
+                documents.Paragraph([
+                    documents.Run([
+                        documents.Text("Header text")
+                    ])
+                ])
+            ])
+        ]);
+        assert.deepEqual(result.value.footers, [
+            documents.Footer([
+                documents.Paragraph([
+                    documents.Run([
+                        documents.Text("Footer text")
+                    ])
+                ])
+            ])
+        ]);
+        assert.deepEqual(result.messages, []);
+    });
+});
+
 
 function createPackageRelationships(mainDocumentPath) {
     return xml.writeString(xml.element("r:Relationships", {}, [
@@ -176,4 +292,28 @@ function createPackageRelationships(mainDocumentPath) {
             "Target": mainDocumentPath
         })
     ]), relationshipNamespaces);
+}
+
+function createDocumentWithHeaderFooterReferences(references) {
+    return xml.writeString(xml.element("w:document", {}, [
+        xml.element("w:body", {}, [
+            xml.element("w:sectPr", {}, references.map(function(reference) {
+                return xml.element("w:" + reference.name + "Reference", {
+                    "r:id": reference.relationshipId
+                }, []);
+            }))
+        ])
+    ]), documentNamespaces);
+}
+
+function createHeaderFooterXml(elementName, text) {
+    return xml.writeString(xml.element("w:" + elementName, {}, [
+        xml.element("w:p", {}, [
+            xml.element("w:r", {}, [
+                xml.element("w:t", {}, [
+                    xml.text(text)
+                ])
+            ])
+        ])
+    ]), documentNamespaces);
 }
