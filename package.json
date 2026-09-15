@@ -14,7 +14,7 @@
   "main": "./lib/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mwilliamson/mammoth.js.git"
+    "url": "https://github.com/721806280/mammoth.js.git"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.6",
