@@ -53,6 +53,12 @@ jobs:
             - name: Build browser bundle
               run: make mammoth.browser.min.js
 
+            - name: Debug OIDC claims
+              run: |
+                  TOKEN=$(curl -s -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+                      "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).value))")
+                  echo "$TOKEN" | cut -d. -f2 | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const b=JSON.parse(Buffer.from(d,'base64').toString());console.log(JSON.stringify({repository:b.repository,repository_owner:b.repository_owner,repository_owner_id:b.repository_owner_id,workflow:b.workflow,job_workflow_ref:b.job_workflow_ref,environment:b.environment,ref:b.ref},null,2))})"
+
             - name: Publish to npm
               run: npm publish --tag ${{ steps.dist-tag.outputs.tag }} --access public --provenance
 
