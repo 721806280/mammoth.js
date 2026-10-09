@@ -67,12 +67,14 @@
     "Buffer": false,
     "console": true,
     "exports": true,
+    "global": false,
     "module": true,
     "process": false,
     "Promise": false,
     "require": false,
     "setTimeout": false,
     "TextDecoder": false,
+    "TextEncoder": false,
     "Uint8Array": false
   }
 }
