@@ -104,6 +104,60 @@ test("paragraph has justification read from paragraph properties if present", fu
     assert.deepEqual(paragraph.alignment, "center");
 });
 
+test("paragraph alignment is inherited from styles and can be overridden directly", function() {
+    var styles = new Styles({
+        "Base": {alignment: "center"},
+        "Heading": {name: "Heading", basedOn: "Base"}
+    });
+    var properties = xml.element("w:pPr", {}, [xml.element("w:pStyle", {"w:val": "Heading"})]);
+    var paragraphXml = xml.element("w:p", {}, [properties]);
+    assert.equal(readXmlElementValue(paragraphXml, {styles: styles}).alignment, "center");
+    properties.children.push(xml.element("w:jc", {"w:val": "left"}));
+    assert.equal(readXmlElementValue(paragraphXml, {styles: styles}).alignment, "left");
+});
+
+test("table alignment is read from table properties", function() {
+    var table = xml.element("w:tbl", {}, [
+        xml.element("w:tblPr", {}, [xml.element("w:jc", {"w:val": "center"})])
+    ]);
+    assert.equal(readXmlElementValue(table).alignment, "center");
+});
+
+test("paragraph borders are read from paragraph properties", function() {
+    var borderXml = new XmlElement("w:bottom", {
+        "w:val": "single",
+        "w:sz": "6",
+        "w:space": "1",
+        "w:color": "auto"
+    }, []);
+    var propertiesXml = new XmlElement("w:pPr", {}, [
+        new XmlElement("w:pBdr", {}, [borderXml])
+    ]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+
+    assert.deepEqual(paragraph.borders.bottom, {
+        style: "single",
+        size: "6",
+        space: "1",
+        color: "auto"
+    });
+    assert.equal(paragraph.borders.top, null);
+});
+
+test("paragraph borders with nil values are ignored", function() {
+    var borderXml = new XmlElement("w:bottom", {"w:val": "nil"}, []);
+    var propertiesXml = new XmlElement("w:pPr", {}, [
+        new XmlElement("w:pBdr", {}, [borderXml])
+    ]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+
+    assert.equal(paragraph.borders.bottom, null);
+});
+
 test("paragraph indent", {
     "when w:start is set then start indent is read from w:start": function() {
         var paragraphXml = paragraphWithIndent({"w:start": "720", "w:left": "40"});
@@ -247,6 +301,31 @@ test("numbering properties are ignored if w:numId is missing", function() {
 
     var numberingLevel = _readNumberingProperties(null, numberingPropertiesXml, numbering);
     assert.equal(numberingLevel, null);
+});
+
+test("numbering is disabled if w:numId is zero", function() {
+    var numberingPropertiesXml = new XmlElement("w:numPr", {}, [
+        new XmlElement("w:ilvl", {"w:val": "1"}),
+        new XmlElement("w:numId", {"w:val": "0"})
+    ]);
+
+    var numbering = new NumberingMap({
+        findLevel: {"0": {"1": {isOrdered: true, level: "1"}}}
+    });
+
+    var numberingLevel = _readNumberingProperties(null, numberingPropertiesXml, numbering);
+    assert.equal(numberingLevel, null);
+});
+
+test("paragraph has list break if w:numId is zero", function() {
+    var numberingPropertiesXml = new XmlElement("w:numPr", {}, [
+        new XmlElement("w:numId", {"w:val": "0"})
+    ]);
+    var propertiesXml = new XmlElement("w:pPr", {}, [numberingPropertiesXml]);
+    var paragraphXml = new XmlElement("w:p", {}, [propertiesXml]);
+
+    var paragraph = readXmlElementValue(paragraphXml);
+    assert.equal(paragraph.listBreak, true);
 });
 
 test("content of deleted paragraph is prepended to next paragraph", function() {
@@ -610,6 +689,107 @@ test("complex fields", (function() {
         }
     };
 })());
+
+test("simple fields", {
+    "simple field with unknown instruction reads its result content": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": " TITLE  \\* MERGEFORMAT "}, [
+                runOfText("Using the Title Property in the Document")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isText("Using the Title Property in the Document")
+                )
+            })
+        ));
+    },
+
+    "simple field does not warn about an unrecognised element": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": " TITLE "}, [
+                runOfText("Title")
+            ])
+        ]);
+        var result = readXmlElement(paragraphXml);
+        assert.deepEqual(result.messages, []);
+    },
+
+    "simple field for hyperlink with quoted location is read as external hyperlink": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK "http://example.com" '}, [
+                runOfText("this is a hyperlink")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        href: "http://example.com",
+                        children: contains(
+                            isText("this is a hyperlink")
+                        )
+                    })
+                )
+            })
+        ));
+    },
+
+    "simple field for hyperlink with l switch is read as internal hyperlink": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK \\l "InternalLink" '}, [
+                runOfText("this is a hyperlink")
+            ])
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        anchor: "InternalLink",
+                        children: contains(
+                            isText("this is a hyperlink")
+                        )
+                    })
+                )
+            })
+        ));
+    },
+
+    "simple field is no longer a hyperlink after it ends": function() {
+        var paragraphXml = xml.element("w:p", {}, [
+            xml.element("w:fldSimple", {"w:instr": ' HYPERLINK "http://example.com" '}, [
+                runOfText("linked")
+            ]),
+            runOfText("not linked")
+        ]);
+        var paragraph = readXmlElementValue(paragraphXml);
+
+        assertThat(paragraph.children, contains(
+            isRun({
+                children: contains(
+                    isHyperlink({
+                        href: "http://example.com",
+                        children: contains(
+                            isText("linked")
+                        )
+                    })
+                )
+            }),
+            isRun({
+                children: contains(
+                    isText("not linked")
+                )
+            })
+        ));
+    }
+});
 
 test("checkboxes", {
     "complex field checkbox without separate is read": function() {
@@ -1535,6 +1715,38 @@ function isImage(options) {
     }
 }
 
+
+function oleObjectRelationship(relationshipId, target) {
+    return {
+        relationshipId: relationshipId,
+        target: target,
+        type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
+    };
+}
+
+var OLE_BUFFER = new Buffer("Pretend OLE compound file");
+var SIZE_IMAGE_BUFFER = new Buffer("Pretend image bytes");
+
+function readEmbeddedOleObject(element, options) {
+    options = options || {};
+
+    var relationships = [
+        oleObjectRelationship("rId5", "embeddings/oleObject1.bin")
+    ].concat(options.relationships || []);
+
+    return readXmlElement(element, {
+        relationships: new Relationships(relationships),
+        contentTypes: {
+            findContentType: function() {
+                return "application/vnd.openxmlformats-officedocument.oleObject";
+            }
+        },
+        docxFile: createFakeDocxFile({
+            "word/embeddings/oleObject1.bin": OLE_BUFFER
+        })
+    });
+}
+
 function readEmbeddedImage(element, options) {
     options = options || {};
 
@@ -1574,6 +1786,101 @@ test("when v:imagedata element has no relationship ID then it is ignored with wa
     assert.deepEqual(result.value, []);
     assert.deepEqual(result.messages, [warning("A v:imagedata element without a relationship ID was ignored")]);
 });
+test("OLE object is read with progId and display name", function() {
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Excel.Sheet.12"
+    });
+
+    var result = readEmbeddedOleObject(oleElement);
+
+    return promiseThat(result, isSuccess(hasProperties({
+        type: "oleObject",
+        progId: "Excel.Sheet.12",
+        displayName: "Excel Worksheet"
+    })));
+});
+
+test("OLE object uses ProgID as display name when ProgID is not recognised", function() {
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Unknown.ProgID.1"
+    });
+
+    var result = readEmbeddedOleObject(oleElement);
+
+    return promiseThat(result, isSuccess(hasProperties({
+        progId: "Unknown.ProgID.1",
+        displayName: "Unknown.ProgID.1"
+    })));
+});
+
+test("when OLE object has no relationship ID then it is ignored with warning", function() {
+    var oleElement = new XmlElement("o:OLEObject", {ProgID: "Excel.Sheet.12"});
+
+    var result = readXmlElement(oleElement);
+
+    assert.deepEqual(result.value, []);
+    assert.deepEqual(result.messages, [warning("An OLE object without a relationship ID was ignored")]);
+});
+
+test("w:object with an OLE object drops the EMF preview image", function() {
+    var relationships = [
+        imageRelationship("rId6", "media/icon1.emf"),
+        oleObjectRelationship("rId5", "embeddings/oleObject1.bin")
+    ];
+    var shapeElement = new XmlElement("v:shape", {}, [
+        new XmlElement("v:imagedata", {"r:id": "rId6"})
+    ]);
+    var oleElement = new XmlElement("o:OLEObject", {
+        "r:id": "rId5",
+        "ProgID": "Excel.Sheet.12"
+    });
+    var objectElement = new XmlElement("w:object", {}, [shapeElement, oleElement]);
+
+    var result = readXmlElement(objectElement, {
+        relationships: new Relationships(relationships),
+        contentTypes: fakeContentTypes,
+        docxFile: createFakeDocxFile({
+            "word/media/icon1.emf": OLE_BUFFER,
+            "word/embeddings/oleObject1.bin": OLE_BUFFER
+        })
+    });
+
+    assertThat(result.value, hasProperties({type: "oleObject", progId: "Excel.Sheet.12"}));
+    assert.deepEqual(result.messages, []);
+});
+
+test("w:object with an OLE object without a relationship ID is ignored with warning", function() {
+    var oleElement = new XmlElement("o:OLEObject", {ProgID: "Excel.Sheet.12"});
+    var objectElement = new XmlElement("w:object", {}, [oleElement]);
+
+    var result = readXmlElement(objectElement);
+
+    assert.deepEqual(result.value, []);
+    assert.deepEqual(result.messages, [warning("An OLE object without a relationship ID was ignored")]);
+});
+
+test("w:object without an OLE object keeps its image children", function() {
+    var relationships = [
+        imageRelationship("rId6", "media/icon1.emf")
+    ];
+    var shapeElement = new XmlElement("v:shape", {}, [
+        new XmlElement("v:imagedata", {"r:id": "rId6"})
+    ]);
+    var objectElement = new XmlElement("w:object", {}, [shapeElement]);
+
+    var result = readXmlElement(objectElement, {
+        relationships: new Relationships(relationships),
+        contentTypes: fakeContentTypes,
+        docxFile: createFakeDocxFile({
+            "word/media/icon1.emf": SIZE_IMAGE_BUFFER
+        })
+    });
+
+    assertThat(result.value, contains(hasProperties({type: "image"})));
+});
+
 
 test("can read inline pictures", function() {
     var drawing = createInlineImage({

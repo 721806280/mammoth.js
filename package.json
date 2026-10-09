@@ -1,7 +1,7 @@
 {
-  "name": "mammoth",
-  "version": "1.13.0",
-  "author": "Michael Williamson <mike@zwobble.org>",
+  "name": "@xm721806280/mammoth",
+  "version": "1.13.0-rc2",
+  "author": "xm.z",
   "description": "Convert Word documents from docx to simple HTML and Markdown",
   "keywords": [
     "docx",
@@ -14,7 +14,7 @@
   "main": "./lib/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mwilliamson/mammoth.js.git"
+    "url": "https://github.com/721806280/mammoth.js.git"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.6",

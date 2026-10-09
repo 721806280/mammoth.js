@@ -68,6 +68,37 @@ test('styles include names', function() {
     assert.equal(styles.findParagraphStyleById("Heading1").name, "Heading 1");
 });
 
+test('paragraph alignment resolves basedOn, default style and document defaults', function() {
+    var styles = readStylesXml(new XmlElement("w:styles", {}, [
+        new XmlElement("w:docDefaults", {}, [
+            new XmlElement("w:pPrDefault", {}, [
+                new XmlElement("w:pPr", {}, [new XmlElement("w:jc", {"w:val": "right"})])
+            ])
+        ]),
+        new XmlElement("w:style", {"w:type": "paragraph", "w:styleId": "Base", "w:default": "1"}, [
+            new XmlElement("w:pPr", {}, [new XmlElement("w:jc", {"w:val": "center"})])
+        ]),
+        new XmlElement("w:style", {"w:type": "paragraph", "w:styleId": "Heading"}, [
+            new XmlElement("w:basedOn", {"w:val": "Base"})
+        ]),
+        new XmlElement("w:style", {"w:type": "paragraph", "w:styleId": "Unbased"})
+    ]));
+    assert.equal(styles.findParagraphAlignmentById("Heading"), "center");
+    assert.equal(styles.findParagraphAlignmentById(null), "center");
+    assert.equal(styles.findParagraphAlignmentById("Unbased"), "right");
+});
+
+test('cyclic and missing paragraph style bases do not prevent conversion', function() {
+    var Styles = require("../../lib/docx/styles-reader").Styles;
+    var styles = new Styles({
+        "First": {basedOn: "Second"},
+        "Second": {basedOn: "First"},
+        "Missing": {basedOn: "Unknown"}
+    });
+    assert.equal(styles.findParagraphAlignmentById("First"), undefined);
+    assert.equal(styles.findParagraphAlignmentById("Missing"), undefined);
+});
+
 test('style name is null if w:name element does not exist', function() {
     var styles = readStylesXml(
         new XmlElement("w:styles", {}, [
